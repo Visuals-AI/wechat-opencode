@@ -63,6 +63,11 @@ function writeLogLine(level: string, message: string, data?: unknown): void {
   }
   const line = parts.join(" ") + "\n";
   appendFileSync(getLogFilePath(), line, "utf-8");
+  if (process.env.WOC_CONSOLE === "1") {
+    const output = line.trimEnd();
+    if (level === "ERROR") console.error(output);
+    else console.log(output);
+  }
 }
 
 export const logger = {

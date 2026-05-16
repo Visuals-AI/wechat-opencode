@@ -35,6 +35,67 @@ npm run daemon -- start
 
 然后直接在微信中发消息。
 
+## Linux 后台模式
+
+适合 Linux 服务器、SSH 环境、无 GUI 机器，或者希望桥接服务在后台持续运行的场景。
+
+首次绑定会在终端打印黑白字符二维码。如果 Linux 没有图形界面，直接用微信扫描终端里的二维码：
+
+```bash
+npm run setup
+```
+
+启动后台桥接：
+
+```bash
+npm run daemon -- start
+```
+
+查看状态：
+
+```bash
+npm run daemon -- status
+```
+
+查看日志：
+
+```bash
+npm run daemon -- logs
+```
+
+停止桥接：
+
+```bash
+npm run daemon -- stop
+```
+
+代码或配置变更后重启：
+
+```bash
+npm run daemon -- restart
+```
+
+当前 `daemon` 使用 Node 跨平台管理器；但 Linux/headless 场景推荐使用这个后台模式。数据和日志存储在 `~/.wechat-opencode/`。
+
+## 桌面控制台
+
+适合 Windows 或有 GUI 的机器，提供按钮和实时交互控制台。
+
+启动 Electron 控制台：
+
+```bash
+npm run desktop
+```
+
+控制台支持：
+
+- 选择 OpenCode 工作目录
+- 扫码绑定微信账号
+- 按钮启动/停止桥接
+- 实时显示微信入站消息、OpenCode 文本输出、工具调用和发回微信的内容
+
+Electron 模式下，桥接进程是桌面应用的子进程。使用窗口里的启动/停止按钮控制；关闭窗口会停止由该窗口启动的桥接进程。
+
 ## 服务命令
 
 ```bash

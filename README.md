@@ -35,6 +35,67 @@ npm run daemon -- start
 
 Then send a message in WeChat.
 
+## Linux Background Mode
+
+Use this mode on Linux servers, SSH sessions, or any machine where you want the bridge to keep running without a desktop window.
+
+First-time setup prints a terminal QR code. If the Linux machine has no GUI, scan the black-and-white QR code directly from the terminal:
+
+```bash
+npm run setup
+```
+
+Start the background bridge:
+
+```bash
+npm run daemon -- start
+```
+
+Check status:
+
+```bash
+npm run daemon -- status
+```
+
+View logs:
+
+```bash
+npm run daemon -- logs
+```
+
+Stop the bridge:
+
+```bash
+npm run daemon -- stop
+```
+
+Restart after code or config changes:
+
+```bash
+npm run daemon -- restart
+```
+
+The Node daemon manager is cross-platform, but this mode is the recommended Linux/headless workflow. Data and logs are stored in `~/.wechat-opencode/`.
+
+## Desktop Console
+
+Use this mode on Windows or any GUI machine when you want buttons and a live interaction console.
+
+Start the Electron console:
+
+```bash
+npm run desktop
+```
+
+The console supports:
+
+- Choosing the OpenCode working directory
+- QR-code WeChat setup
+- Start/stop buttons for the bridge
+- Live logs for inbound WeChat messages, OpenCode text output, tool calls, and outbound WeChat replies
+
+In Electron mode, the bridge runs as a child process of the desktop app. Use the window's `Start` and `Stop` buttons. Closing the desktop window stops the bridge process started by that window.
+
 ## Service Commands
 
 ```bash

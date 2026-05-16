@@ -8,6 +8,7 @@
     "postinstall": "npm run build",
     "start": "node dist/main.js",
     "run": "node dist/main.js start",
+    "desktop": "npm run build && node scripts/desktop.mjs",
     "dev": "tsc --watch",
     "test": "node --test dist/tests/*.test.js",
     "setup": "node dist/main.js setup",

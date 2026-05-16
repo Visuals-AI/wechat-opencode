@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WeChat OpenCode Console</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <section class="panel hero">
+        <div>
+          <p class="eyebrow">WeChat OpenCode</p>
+          <h1>桌面控制台</h1>
+          <p class="subtle">扫码绑定、启动桥接，并在 PC 上实时查看微信消息、OpenCode 工具调用和回复内容。</p>
+        </div>
+        <div class="status-card" id="statusCard">
+          <span class="dot" id="statusDot"></span>
+          <div>
+            <strong id="statusText">未运行</strong>
+            <p id="pidText">PID: -</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel controls">
+        <label class="field">
+          <span>OpenCode 工作目录</span>
+          <div class="path-row">
+            <input id="cwdInput" placeholder="例如 S:\\07_ai\\wechat-opencode 或 /Users/me/project" />
+            <button id="chooseBtn" class="secondary">选择</button>
+          </div>
+        </label>
+        <div class="actions">
+          <button id="setupBtn" class="secondary">扫码绑定 / Setup</button>
+          <button id="startBtn">启动桥接</button>
+          <button id="stopBtn" class="danger">停止</button>
+          <button id="clearBtn" class="ghost">清空控制台</button>
+        </div>
+      </section>
+
+      <section class="panel console-panel">
+        <div class="console-head">
+          <div>
+            <p class="eyebrow">Live Console</p>
+            <h2>交互细节</h2>
+          </div>
+          <p class="hint">微信入站、OpenCode 输出、工具调用、发回微信都会显示在这里。</p>
+        </div>
+        <pre id="console" class="console"></pre>
+      </section>
+    </main>
+    <script src="renderer.js"></script>
+  </body>
+</html>

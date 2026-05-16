@@ -29,7 +29,7 @@ export function createSender(api: WeChatApi, botAccountId: string) {
       item_list: items,
     };
 
-    logger.info('Sending text message', { toUserId, clientId, textLength: text.length });
+    logger.info('Sending text message', { toUserId, clientId, textLength: text.length, preview: text.slice(0, 500) });
     await api.sendMessage({ msg });
     logger.info('Text message sent', { toUserId, clientId });
   }

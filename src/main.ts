@@ -84,6 +84,14 @@ function openFile(filePath: string): void {
 // Setup
 // ---------------------------------------------------------------------------
 
+function getArgValue(name: string): string | undefined {
+  const index = process.argv.indexOf(name);
+  if (index !== -1) return process.argv[index + 1];
+  const prefix = `${name}=`;
+  const found = process.argv.find((arg) => arg.startsWith(prefix));
+  return found ? found.slice(prefix.length) : undefined;
+}
+
 async function runSetup(): Promise<void> {
   mkdirSync(DATA_DIR, { recursive: true });
   const QR_PATH = join(DATA_DIR, 'qrcode.png');
@@ -94,25 +102,25 @@ async function runSetup(): Promise<void> {
   while (true) {
     const { qrcodeUrl, qrcodeId } = await startQrLogin();
 
+    // Always print a terminal QR code. GUI environments also open a PNG below.
+    try {
+      const qrcodeTerminal = await import('qrcode-terminal');
+      console.log('请用微信扫描下方二维码：\n');
+      qrcodeTerminal.default.generate(qrcodeUrl, { small: true });
+      console.log();
+      console.log('二维码链接：', qrcodeUrl);
+      console.log();
+    } catch {
+      logger.warn('qrcode-terminal not available, falling back to URL');
+      console.log('无法在终端显示二维码，请访问链接：');
+      console.log(qrcodeUrl);
+      console.log();
+    }
+
     const isHeadlessLinux = process.platform === 'linux' &&
       !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY;
 
-    if (isHeadlessLinux) {
-      // Headless Linux: display QR in terminal using qrcode-terminal
-      try {
-        const qrcodeTerminal = await import('qrcode-terminal');
-        console.log('请用微信扫描下方二维码：\n');
-        qrcodeTerminal.default.generate(qrcodeUrl, { small: true });
-        console.log();
-        console.log('二维码链接：', qrcodeUrl);
-        console.log();
-      } catch {
-        logger.warn('qrcode-terminal not available, falling back to URL');
-        console.log('无法在终端显示二维码，请访问链接：');
-        console.log(qrcodeUrl);
-        console.log();
-      }
-    } else {
+    if (!isHeadlessLinux) {
       // macOS / Windows / GUI Linux: generate QR PNG and open with system viewer
       const QRCode = await import('qrcode');
       const pngData = await QRCode.toBuffer(qrcodeUrl, { type: 'png', width: 400, margin: 2 });
@@ -143,7 +151,7 @@ async function runSetup(): Promise<void> {
     logger.warn('Failed to clean up QR image', { path: QR_PATH });
   }
 
-  const workingDir = await promptUser('请输入工作目录', process.cwd());
+  const workingDir = getArgValue('--cwd') || await promptUser('请输入工作目录', process.cwd());
   const config = loadConfig();
   config.workingDirectory = workingDir;
   saveConfig(config);
@@ -249,6 +257,13 @@ async function handleMessage(
   // Extract text from items
   const userText = extractTextFromItems(msg.item_list);
   const imageItem = extractFirstImageUrl(msg.item_list);
+  logger.info('WeChat inbound message', {
+    fromUserId,
+    messageId: msg.message_id,
+    hasText: !!userText,
+    hasImage: !!imageItem,
+    preview: userText.slice(0, 500),
+  });
 
   // Concurrency guard: abort current query when new message arrives
   if (session.state === 'processing') {
@@ -326,6 +341,7 @@ async function handleMessage(
     };
 
     const result: CommandResult = routeCommand(ctx);
+    logger.info('Slash command routed', { text: userText, handled: result.handled, hasReply: !!result.reply, hasPrompt: !!result.opencodePrompt });
 
     if (result.handled && result.reply) {
       await sender.sendText(fromUserId, contextToken, result.reply);
@@ -400,6 +416,12 @@ async function sendToOpenCode(
   // Set state to processing
   session.state = 'processing';
   sessionStore.save(account.accountId, session);
+  logger.info('Forwarding message to OpenCode', {
+    accountId: account.accountId,
+    cwd: session.workingDirectory || config.workingDirectory,
+    hasImage: !!imageItem,
+    preview: userText.slice(0, 500),
+  });
 
   // Create abort controller for this query so it can be cancelled by new messages
   const abortController = new AbortController();
@@ -468,10 +490,12 @@ async function sendToOpenCode(
       abortController,
       images,
       onText: async (delta: string) => {
+        logger.info('OpenCode text delta', { length: delta.length, preview: delta.slice(0, 500) });
         pendingBuffer += delta;
         await trySend();
       },
       onThinking: async (summary: string) => {
+        logger.info('OpenCode tool event', { summary });
         pendingBuffer += (pendingBuffer ? '\n' : '') + summary;
         await trySend();
       },
