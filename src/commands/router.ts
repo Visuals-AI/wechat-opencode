@@ -16,7 +16,7 @@ export interface CommandContext {
 export interface CommandResult {
   reply?: string;
   handled: boolean;
-  claudePrompt?: string; // If set, this text should be sent to Claude
+  opencodePrompt?: string; // If set, this text should be sent to OpenCode
 }
 
 /**
@@ -28,7 +28,7 @@ export interface CommandResult {
  *   /model <name> - Update the session model
  *   /status   - Show current session info
  *   /skills   - List all installed skills
- *   /<skill>  - Invoke a skill by name (args are forwarded to Claude)
+ *   /<skill>  - Invoke a skill by name (args are forwarded to OpenCode)
  */
 export function routeCommand(ctx: CommandContext): CommandResult {
   const text = ctx.text.trim();

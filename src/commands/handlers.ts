@@ -18,7 +18,7 @@ const HELP_TEXT = `可用命令：
 
 配置：
   /cwd [路径]       查看或切换工作目录
-  /model [名称]     查看或切换 Claude 模型
+  /model [名称]     查看或切换 OpenCode 模型
   /permission [模式] 查看或切换权限模式
   /prompt [内容]    查看或设置系统提示词（全局生效）
 
@@ -27,7 +27,7 @@ const HELP_TEXT = `可用命令：
   /version          查看版本信息
   /<skill> [参数]   触发已安装的 skill
 
-直接输入文字即可与 Claude Code 对话`;
+直接输入文字即可与 OpenCode 对话`;
 
 // 缓存 skill 列表，避免每次命令都扫描文件系统
 let cachedSkills: SkillInfo[] | null = null;
@@ -70,7 +70,7 @@ export function handleCwd(ctx: CommandContext, args: string): CommandResult {
 
 export function handleModel(ctx: CommandContext, args: string): CommandResult {
   if (!args) {
-    return { reply: '用法: /model <模型名称>\n例: /model claude-sonnet-4-6', handled: true };
+    return { reply: '用法: /model <provider/model>\n例: /model anthropic/claude-sonnet-4-6', handled: true };
   }
   ctx.updateSession({ model: args });
   return { reply: `✅ 模型已切换为: ${args}`, handled: true };
@@ -203,9 +203,9 @@ export function handleVersion(): CommandResult {
     const __dirname = fileURLToPath(new URL('.', import.meta.url));
     const pkg = JSON.parse(readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf-8'));
     const version = pkg.version || 'unknown';
-    return { reply: `wechat-claude-code v${version}`, handled: true };
+    return { reply: `wechat-opencode v${version}`, handled: true };
   } catch {
-    return { reply: 'wechat-claude-code (version unknown)', handled: true };
+    return { reply: 'wechat-opencode (version unknown)', handled: true };
   }
 }
 
@@ -234,7 +234,7 @@ export function handleUnknown(cmd: string, args: string): CommandResult {
 
   if (skill) {
     const prompt = args ? `Use the ${skill.name} skill: ${args}` : `Use the ${skill.name} skill`;
-    return { handled: true, claudePrompt: prompt };
+    return { handled: true, opencodePrompt: prompt };
   }
 
   return {

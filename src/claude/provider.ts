@@ -1,17 +1,8 @@
-import {
-  query,
-  type SDKMessage,
-  type SDKAssistantMessage,
-  type SDKResultMessage,
-  type SDKUserMessage,
-  type Options,
-  type CanUseTool,
-  type PermissionResult,
-} from "@anthropic-ai/claude-agent-sdk";
+import { spawn, type ChildProcess } from "node:child_process";
+import { existsSync, mkdtempSync, writeFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { logger } from "../logger.js";
-import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { join, dirname } from "node:path";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -29,11 +20,11 @@ export interface QueryOptions {
     source: { type: "base64"; media_type: string; data: string };
   }>;
   onPermissionRequest?: (toolName: string, toolInput: string) => Promise<boolean>;
-  /** Called each time an assistant text chunk is produced (e.g. before/after tool calls). */
+  /** Called each time an assistant text chunk is produced. */
   onText?: (text: string) => Promise<void> | void;
-  /** Called when Claude invokes a tool, with a human-readable summary. */
+  /** Called when OpenCode reports a tool call, with a human-readable summary. */
   onThinking?: (summary: string) => Promise<void> | void;
-  /** Optional abort controller to cancel the query (e.g. when user sends a new message). */
+  /** Optional abort controller to cancel the query when a new message arrives. */
   abortController?: AbortController;
 }
 
@@ -43,333 +34,277 @@ export interface QueryResult {
   error?: string;
 }
 
+interface OpenCodeEvent {
+  type?: string;
+  sessionID?: string;
+  part?: {
+    type?: string;
+    text?: string;
+    tool?: string;
+    state?: {
+      input?: unknown;
+      output?: string;
+      title?: string;
+      status?: string;
+    };
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Format a tool_use block into a concise human-readable summary.
- */
-function formatToolUse(toolName: string, input: Record<string, unknown>): string {
+function mediaTypeToExtension(mediaType: string): string {
+  switch (mediaType.toLowerCase()) {
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    case "image/jpeg":
+    case "image/jpg":
+    default:
+      return "jpg";
+  }
+}
+
+function writeImageFiles(images: QueryOptions["images"]): { files: string[]; tempDir?: string } {
+  if (!images?.length) return { files: [] };
+
+  const tempDir = mkdtempSync(join(tmpdir(), "wechat-opencode-"));
+  const files = images.map((image, index) => {
+    const ext = mediaTypeToExtension(image.source.media_type);
+    const filePath = join(tempDir, `image-${index + 1}.${ext}`);
+    writeFileSync(filePath, Buffer.from(image.source.data, "base64"));
+    return filePath;
+  });
+
+  return { files, tempDir };
+}
+
+function buildPrompt(prompt: string, systemPrompt?: string): string {
+  if (!systemPrompt?.trim()) return prompt;
+  return [
+    "System instruction from WeChat bridge:",
+    systemPrompt.trim(),
+    "",
+    "User message:",
+    prompt,
+  ].join("\n");
+}
+
+function formatToolUse(toolName: string, input: unknown): string {
   const icons: Record<string, string> = {
-    Bash: "🔧", Read: "📖", Write: "✏️", Edit: "✏️", MultiEdit: "✏️",
-    Grep: "🔍", Glob: "🔍", WebFetch: "🌐", WebSearch: "🌐",
-    TodoWrite: "📝", TodoRead: "📝", Task: "🤖",
+    bash: "🔧",
+    read: "📖",
+    write: "✏️",
+    edit: "✏️",
+    multiedit: "✏️",
+    grep: "🔍",
+    glob: "🔍",
+    webfetch: "🌐",
+    websearch: "🌐",
+    todowrite: "📝",
+    task: "🤖",
   };
-  const icon = icons[toolName] ?? "⚙️";
+  const icon = icons[toolName.toLowerCase()] ?? "⚙️";
+
   let detail = "";
-  if (input.command) detail = String(input.command).slice(0, 80);
-  else if (input.file_path) detail = String(input.file_path);
-  else if (input.pattern) detail = String(input.pattern).slice(0, 60);
-  else if (input.query) detail = String(input.query).slice(0, 60);
-  else if (input.url) detail = String(input.url).slice(0, 60);
+  if (input && typeof input === "object") {
+    const data = input as Record<string, unknown>;
+    const value = data.command ?? data.filePath ?? data.file_path ?? data.pattern ?? data.query ?? data.url ?? data.description;
+    if (value) detail = String(value).slice(0, 100);
+  }
+
   return detail ? `${icon} ${toolName}: ${detail}` : `${icon} ${toolName}`;
 }
 
-/**
- * Extract accumulated text from an SDK assistant message's content blocks.
- */
-function extractText(msg: SDKAssistantMessage): string {
-  const content = msg.message?.content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .filter((block: any) => block.type === "text")
-    .map((block: any) => (block.text as string) ?? "")
-    .join("");
-}
+function buildArgs(options: QueryOptions, imageFiles: string[]): string[] {
+  const args = ["run", "--format", "json", "--dir", options.cwd];
 
-/**
- * Extract session_id from any SDKMessage that carries one.
- */
-function getSessionId(msg: SDKMessage): string | undefined {
-  if ("session_id" in msg) {
-    return (msg as { session_id: string }).session_id;
-  }
-  return undefined;
-}
+  if (options.resume) args.push("--session", options.resume);
+  else args.push("--title", "WeChat OpenCode");
 
-/**
- * Build an async iterable yielding a single SDKUserMessage with optional
- * image content blocks.  The session_id is set to "" — the SDK assigns the
- * real session id once the process starts.
- */
-async function* singleUserMessage(
-  text: string,
-  images?: QueryOptions["images"],
-): AsyncGenerator<SDKUserMessage, void, unknown> {
-  const contentBlocks: Array<{
-    type: string;
-    text?: string;
-    source?: { type: "base64"; media_type: string; data: string };
-  }> = [{ type: "text", text }];
+  if (options.model) args.push("--model", options.model);
+  if (options.permissionMode === "plan") args.push("--agent", "plan");
+  if (options.permissionMode === "bypassPermissions") args.push("--dangerously-skip-permissions");
 
-  if (images?.length) {
-    for (const img of images) {
-      contentBlocks.push({ type: "image", source: img.source });
-    }
+  for (const file of imageFiles) {
+    args.push("--file", file);
   }
 
-  const msg: SDKUserMessage = {
-    type: "user",
-    session_id: "",
-    parent_tool_use_id: null,
-    message: {
-      role: "user",
-      content: contentBlocks,
-    },
-  };
-
-  yield msg;
+  args.push(buildPrompt(options.prompt, options.systemPrompt));
+  return args;
 }
 
-// ---------------------------------------------------------------------------
-// Resolve global claude cli.js path (avoids bundled old version in SDK)
-// ---------------------------------------------------------------------------
+function createOpenCodeEnv(): NodeJS.ProcessEnv {
+  const env = { ...process.env };
 
-function resolveGlobalClaudeCliPath(): string | undefined {
+  // opencode run starts its own local server. If these are inherited from an
+  // existing OpenCode session, the CLI can send mismatched auth and fail with
+  // "Session not found" before creating the run session.
+  delete env.OPENCODE_SERVER_USERNAME;
+  delete env.OPENCODE_SERVER_PASSWORD;
+
+  return env;
+}
+
+function getOpenCodeCommand(): { command: string; prefixArgs: string[] } {
+  if (process.platform !== "win32") {
+    return { command: "opencode", prefixArgs: [] };
+  }
+
+  const appData = process.env.APPDATA;
+  const psShim = appData ? join(appData, "npm", "opencode.ps1") : undefined;
+  if (psShim && existsSync(psShim)) {
+    return { command: "pwsh", prefixArgs: ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", psShim] };
+  }
+
+  return { command: "pwsh", prefixArgs: ["-NoProfile", "-Command", "opencode"] };
+}
+
+async function handleLine(
+  line: string,
+  state: { sessionId: string; textParts: string[] },
+  options: QueryOptions,
+): Promise<void> {
+  let event: OpenCodeEvent;
   try {
-    const claudeBin = execSync("which claude", { encoding: "utf8" }).trim();
-    // Resolve symlinks to get the actual file
-    const realBin = execSync(`readlink -f "${claudeBin}" 2>/dev/null || realpath "${claudeBin}" 2>/dev/null || echo "${claudeBin}"`, { encoding: "utf8" }).trim();
-    // On npm global installs, the binary itself is cli.js
-    if (realBin.endsWith(".js") && existsSync(realBin)) return realBin;
-    // Otherwise look for cli.js next to the binary
-    const cliJs = join(dirname(realBin), "cli.js");
-    if (existsSync(cliJs)) return cliJs;
-    // Try npm global prefix
-    const npmPrefix = execSync("npm config get prefix", { encoding: "utf8" }).trim();
-    const npmCli = join(npmPrefix, "lib", "node_modules", "@anthropic-ai", "claude-code", "cli.js");
-    if (existsSync(npmCli)) return npmCli;
+    event = JSON.parse(line) as OpenCodeEvent;
   } catch {
-    // ignore
+    logger.debug("Ignoring non-JSON opencode output", { line });
+    return;
   }
-  return undefined;
+
+  if (event.sessionID) state.sessionId = event.sessionID;
+
+  if (event.type === "text" && event.part?.text) {
+    state.textParts.push(event.part.text);
+    await options.onText?.(event.part.text);
+    return;
+  }
+
+  if (event.type === "tool_use" && event.part?.tool) {
+    await options.onThinking?.(formatToolUse(event.part.tool, event.part.state?.input));
+  }
 }
 
-const GLOBAL_CLAUDE_CLI_PATH = resolveGlobalClaudeCliPath();
+function waitForProcess(
+  child: ChildProcess,
+  abortController?: AbortController,
+): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      child.kill();
+      reject(new DOMException("OpenCode query aborted", "AbortError"));
+    };
+
+    if (abortController?.signal.aborted) {
+      abort();
+      return;
+    }
+
+    abortController?.signal.addEventListener("abort", abort, { once: true });
+
+    child.once("error", (err) => {
+      abortController?.signal.removeEventListener("abort", abort);
+      reject(err);
+    });
+
+    child.once("exit", (code, signal) => {
+      abortController?.signal.removeEventListener("abort", abort);
+      resolve({ code, signal });
+    });
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Core function
 // ---------------------------------------------------------------------------
 
-export async function claudeQuery(options: QueryOptions): Promise<QueryResult> {
-  const {
-    prompt,
-    cwd,
-    resume,
-    model,
-    systemPrompt,
-    permissionMode,
-    images,
-    onPermissionRequest,
-    onText,
-    onThinking,
-    abortController,
-  } = options;
+export async function opencodeQuery(options: QueryOptions): Promise<QueryResult> {
+  const { files: imageFiles, tempDir } = writeImageFiles(options.images);
+  const args = buildArgs(options, imageFiles);
+  const state = { sessionId: options.resume ?? "", textParts: [] as string[] };
+  let errorMessage: string | undefined;
+  let stderr = "";
 
-  logger.info("Starting Claude query", {
-    cwd,
-    model,
-    permissionMode,
-    resume: !!resume,
-    hasImages: !!images?.length,
+  logger.info("Starting OpenCode query", {
+    cwd: options.cwd,
+    model: options.model,
+    permissionMode: options.permissionMode,
+    resume: !!options.resume,
+    hasImages: imageFiles.length > 0,
   });
 
-  // When images are present we use the multi-content AsyncIterable path;
-  // otherwise a plain string is simpler and sufficient.
-  const hasImages = images && images.length > 0;
-  const promptParam: string | AsyncIterable<SDKUserMessage> = hasImages
-    ? singleUserMessage(prompt, images)
-    : prompt;
-
-  // --- Build SDK options ---
-  const sdkOptions: Options = {
-    cwd,
-    permissionMode,
-    allowDangerouslySkipPermissions: permissionMode === 'bypassPermissions',
-    settingSources: ["user", "project"],
-    includePartialMessages: !!onText,
-  };
-
-  // Use the globally installed claude cli.js to avoid version mismatch with the bundled one
-  if (GLOBAL_CLAUDE_CLI_PATH) {
-    (sdkOptions as any).pathToClaudeCodeExecutable = GLOBAL_CLAUDE_CLI_PATH;
-    logger.debug("Using global claude cli.js", { path: GLOBAL_CLAUDE_CLI_PATH });
-  }
-
-  if (model) sdkOptions.model = model;
-  if (resume) sdkOptions.resume = resume;
-  if (abortController) sdkOptions.abortController = abortController;
-  if (systemPrompt) {
-    (sdkOptions as any).systemPrompt = { type: "preset", preset: "claude_code", append: systemPrompt };
-  }
-
-  // Permission callback — bridges the SDK's CanUseTool to our simpler handler.
-  if (onPermissionRequest) {
-    const canUseTool: CanUseTool = async (
-      toolName: string,
-      input: Record<string, unknown>,
-    ): Promise<PermissionResult> => {
-      const inputStr = JSON.stringify(input);
-      logger.info("Permission request from SDK", { toolName });
-      try {
-        const allowed = await onPermissionRequest(toolName, inputStr);
-        if (allowed) {
-          return { behavior: "allow", updatedInput: input };
-        }
-        return {
-          behavior: "deny",
-          message: "Permission denied by user.",
-          interrupt: true,
-        };
-      } catch (err) {
-        logger.error("Permission handler error", { toolName, err });
-        return {
-          behavior: "deny",
-          message: "Permission check failed.",
-          interrupt: true,
-        };
-      }
-    };
-    sdkOptions.canUseTool = canUseTool;
-  }
-
-  // --- Execute query & accumulate output ---
-  const MAX_THINKING_PREVIEW = 300; // max chars per thinking block shown to user
-  let sessionId = "";
-  const textParts: string[] = [];
-  let errorMessage: string | undefined;
-  let thinkingBuf = "";      // accumulates current thinking block
-  let thinkingCapped = false; // true once we've emitted the preview for this block
-
-  const QUERY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes
-
   try {
-    const result = query({ prompt: promptParam, options: sdkOptions });
-
-    let timeoutId: ReturnType<typeof setTimeout>;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error('Claude query timed out after 5 minutes')), QUERY_TIMEOUT_MS);
+    const opencode = getOpenCodeCommand();
+    const child = spawn(opencode.command, [...opencode.prefixArgs, ...args], {
+      cwd: options.cwd,
+      env: createOpenCodeEnv(),
+      stdio: ["ignore", "pipe", "pipe"],
+      windowsHide: true,
     });
 
-    const iterateResult = async () => {
-      for await (const message of result) {
-      const sid = getSessionId(message);
-      if (sid) sessionId = sid;
-
-      switch (message.type) {
-        case "assistant": {
-          const aMsg = message as SDKAssistantMessage;
-          const content = aMsg.message?.content;
-          // Extract tool_use blocks and notify onThinking
-          if (onThinking) {
-            if (Array.isArray(content)) {
-              for (const block of content) {
-                if ((block as any).type === "tool_use") {
-                  const summary = formatToolUse(
-                    (block as any).name ?? "Tool",
-                    (block as any).input ?? {},
-                  );
-                  await onThinking(summary);
-                }
-              }
-            }
-          }
-          // Accumulate text; only call onText if not already streaming via stream_event
-          const text = extractText(aMsg);
-          if (text) {
-            textParts.push(text);
-            if (onText && !sdkOptions.includePartialMessages) await onText(text);
-          }
-          break;
+    let stdoutBuffer = "";
+    const lineHandlers: Promise<void>[] = [];
+    child.stdout.setEncoding("utf8");
+    child.stdout.on("data", (chunk: string) => {
+      stdoutBuffer += chunk;
+      const lines = stdoutBuffer.split(/\r?\n/);
+      stdoutBuffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (line.trim()) {
+          lineHandlers.push(handleLine(line, state, options));
         }
-        case "stream_event": {
-          const evt = (message as any).event;
-          if (evt?.type === "content_block_start") {
-            // Reset thinking state at the start of each new block
-            if (evt?.content_block?.type === "thinking") {
-              thinkingBuf = "";
-              thinkingCapped = false;
-            }
-          } else if (evt?.type === "content_block_delta") {
-            const deltaType: string = evt.delta?.type ?? "";
-            if (deltaType === "text_delta" && onText) {
-              const delta: string = evt.delta.text;
-              if (delta) await onText(delta);
-            } else if (deltaType === "thinking_delta" && onText && !thinkingCapped) {
-              // Accumulate thinking text; emit a short preview once we hit the cap
-              thinkingBuf += (evt.delta.thinking as string) ?? "";
-              if (thinkingBuf.length >= MAX_THINKING_PREVIEW) {
-                thinkingCapped = true;
-                await onText("💭 " + thinkingBuf.slice(0, MAX_THINKING_PREVIEW).trim() + "…\n");
-                thinkingBuf = "";
-              }
-            }
-          } else if (evt?.type === "content_block_stop") {
-            // Block ended before hitting the cap — emit what we have (if non-empty)
-            if (thinkingBuf.trim() && onText && !thinkingCapped) {
-              await onText("💭 " + thinkingBuf.trim() + "\n");
-            }
-            thinkingBuf = "";
-            thinkingCapped = false;
-          }
-          break;
-        }
-        case "result": {
-          const rm = message as SDKResultMessage;
-          if (rm.subtype === "success" && "result" in rm) {
-            // The SDK result message carries the final result string.
-            // Append only when it adds content not yet seen.
-            if (rm.result) {
-              const combined = textParts.join("");
-              if (!combined.includes(rm.result)) {
-                textParts.push(rm.result);
-              }
-            }
-          } else if ("errors" in rm && rm.errors.length > 0) {
-            errorMessage = rm.errors.join("; ");
-            logger.error("SDK returned error result", { errors: rm.errors });
-          }
-          break;
-        }
-        case "system": {
-          logger.debug("SDK system message", {
-            subtype: (message as { subtype?: string }).subtype,
-          });
-          break;
-        }
-        default:
-          // tool_progress, auth_status, etc. — ignore
-          break;
       }
-    }
-    };
+    });
 
-    try {
-      await Promise.race([iterateResult(), timeoutPromise]);
-    } finally {
-      clearTimeout(timeoutId!);
+    child.stderr.setEncoding("utf8");
+    child.stderr.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+
+    const timeout = setTimeout(() => child.kill(), 5 * 60 * 1000);
+    const { code, signal } = await waitForProcess(child, options.abortController);
+    clearTimeout(timeout);
+
+    if (stdoutBuffer.trim()) {
+      lineHandlers.push(handleLine(stdoutBuffer.trim(), state, options));
+    }
+    await Promise.all(lineHandlers);
+
+    if (code !== 0) {
+      errorMessage = stderr.trim() || `opencode exited with code ${code}${signal ? ` (${signal})` : ""}`;
     }
   } catch (err: unknown) {
     errorMessage = err instanceof Error ? err.message : String(err);
-    logger.error("Claude query threw", { error: errorMessage });
+    logger.error("OpenCode query threw", { error: errorMessage });
+  } finally {
+    if (tempDir) {
+      try {
+        rmSync(tempDir, { recursive: true, force: true });
+      } catch {
+        logger.warn("Failed to clean up temporary image files", { tempDir });
+      }
+    }
   }
 
-  const fullText = textParts.join("\n").trim();
-
+  const fullText = state.textParts.join("\n").trim();
   if (!fullText && !errorMessage) {
-    errorMessage = "Claude returned an empty response.";
+    errorMessage = "OpenCode returned an empty response.";
   }
 
-  logger.info("Claude query completed", {
-    sessionId,
+  logger.info("OpenCode query completed", {
+    sessionId: state.sessionId,
     textLength: fullText.length,
     hasError: !!errorMessage,
   });
 
   return {
     text: fullText,
-    sessionId,
+    sessionId: state.sessionId,
     error: errorMessage,
   };
 }

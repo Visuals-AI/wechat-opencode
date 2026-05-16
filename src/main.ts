@@ -13,7 +13,7 @@ import { downloadImage, extractText, extractFirstImageUrl } from './wechat/media
 import { createSessionStore, type Session } from './session.js';
 import { createPermissionBroker } from './permission.js';
 import { routeCommand, type CommandContext, type CommandResult } from './commands/router.js';
-import { claudeQuery, type QueryOptions } from './claude/provider.js';
+import { opencodeQuery, type QueryOptions } from './claude/provider.js';
 import { loadConfig, saveConfig } from './config.js';
 import { logger } from './logger.js';
 import { DATA_DIR } from './constants.js';
@@ -265,7 +265,7 @@ async function handleMessage(
       if (ctrl) { ctrl.abort(); activeControllers.delete(account.accountId); }
       session.state = 'idle';
       sessionStore.save(account.accountId, session);
-      // Fall through to send new message to Claude
+      // Fall through to send new message to OpenCode
     } else if (!userText.startsWith('/status') && !userText.startsWith('/help')) {
       return;
     }
@@ -332,10 +332,10 @@ async function handleMessage(
       return;
     }
 
-    if (result.handled && result.claudePrompt) {
-      // Fall through to send the claudePrompt to Claude
-      await sendToClaude(
-        result.claudePrompt,
+    if (result.handled && result.opencodePrompt) {
+      // Fall through to send the opencodePrompt to OpenCode
+      await sendToOpenCode(
+        result.opencodePrompt,
         imageItem,
         fromUserId,
         contextToken,
@@ -351,21 +351,21 @@ async function handleMessage(
     }
 
     if (result.handled) {
-      // Handled but no reply and no claudePrompt (shouldn't normally happen)
+      // Handled but no reply and no opencodePrompt (shouldn't normally happen)
       return;
     }
 
     // Not handled, treat as normal message (fall through)
   }
 
-  // -- Normal message -> Claude --
+  // -- Normal message -> OpenCode --
 
   if (!userText && !imageItem) {
     await sender.sendText(fromUserId, contextToken, '暂不支持此类型消息，请发送文字或图片');
     return;
   }
 
-  await sendToClaude(
+  await sendToOpenCode(
     userText,
     imageItem,
     fromUserId,
@@ -384,7 +384,7 @@ function extractTextFromItems(items: NonNullable<WeixinMessage['item_list']>): s
   return items.map((item) => extractText(item)).filter(Boolean).join('\n');
 }
 
-async function sendToClaude(
+async function sendToOpenCode(
   userText: string,
   imageItem: ReturnType<typeof extractFirstImageUrl>,
   fromUserId: string,
@@ -414,7 +414,7 @@ async function sendToClaude(
     if (imageItem) {
       const base64DataUri = await downloadImage(imageItem);
       if (base64DataUri) {
-        // Convert data URI to the format Claude expects
+        // Convert data URI to the format OpenCode accepts through --file.
         const matches = base64DataUri.match(/^data:([^;]+);base64,(.+)$/);
         if (matches) {
           images = [
@@ -434,7 +434,7 @@ async function sendToClaude(
     const effectivePermissionMode = session.permissionMode ?? config.permissionMode;
     const isAutoPermission = effectivePermissionMode === 'auto';
 
-    // Map 'auto' to bypassPermissions — skips all permission checks in the SDK
+    // Map 'auto' to bypassPermissions — skips OpenCode permission prompts.
     const sdkPermissionMode = isAutoPermission ? 'bypassPermissions' : effectivePermissionMode;
 
     // Unified buffer: text deltas and tool summaries all go here
@@ -506,7 +506,7 @@ async function sendToClaude(
           },
     };
 
-    let result = await claudeQuery(queryOptions);
+    let result = await opencodeQuery(queryOptions);
 
     // If resume failed (e.g. corrupted session), retry without resume
     if (result.error && queryOptions.resume) {
@@ -514,7 +514,7 @@ async function sendToClaude(
       queryOptions.resume = undefined;
       session.sdkSessionId = undefined;
       sessionStore.save(account.accountId, session);
-      const retryResult = await claudeQuery(queryOptions);
+      const retryResult = await opencodeQuery(queryOptions);
       Object.assign(result, retryResult);
     }
 
@@ -524,7 +524,7 @@ async function sendToClaude(
     // Send result back to WeChat
     if (result.text) {
       if (result.error) {
-        logger.warn('Claude query had error but returned text, using text', { error: result.error });
+        logger.warn('OpenCode query had error but returned text, using text', { error: result.error });
       }
       sessionStore.addChatMessage(session, 'assistant', result.text);
       // If nothing was streamed at all (e.g. streaming not supported), send full text now
@@ -535,10 +535,10 @@ async function sendToClaude(
         }
       }
     } else if (result.error) {
-      logger.error('Claude query error', { error: result.error });
-      await sender.sendText(fromUserId, contextToken, '⚠️ Claude 处理请求时出错，请稍后重试。');
+      logger.error('OpenCode query error', { error: result.error });
+      await sender.sendText(fromUserId, contextToken, '⚠️ OpenCode 处理请求时出错，请稍后重试。');
     } else if (!anySent) {
-      await sender.sendText(fromUserId, contextToken, 'ℹ️ Claude 无返回内容（可能因权限被拒而终止）');
+      await sender.sendText(fromUserId, contextToken, 'ℹ️ OpenCode 无返回内容（可能因权限被拒而终止）');
     }
 
     // Update session with new SDK session ID
@@ -549,10 +549,10 @@ async function sendToClaude(
     const isAbort = err instanceof Error && (err.name === 'AbortError' || err.message.includes('abort'));
     if (isAbort) {
       // Query was cancelled by a new incoming message — exit silently
-      logger.info('Claude query aborted by new message');
+      logger.info('OpenCode query aborted by new message');
     } else {
       const errorMsg = err instanceof Error ? err.message : String(err);
-      logger.error('Error in sendToClaude', { error: errorMsg });
+      logger.error('Error in sendToOpenCode', { error: errorMsg });
       await sender.sendText(fromUserId, contextToken, '⚠️ 处理消息时出错，请稍后重试。');
     }
     session.state = 'idle';

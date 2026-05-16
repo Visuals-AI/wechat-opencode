@@ -72,58 +72,32 @@ function scanDirectory(baseDir: string, depth: number = 2): SkillInfo[] {
 }
 
 /**
- * Scan all known skill directories for installed Claude Code skills.
+ * Scan known OpenCode skill directories.
  *
  * Locations scanned:
- * 1. ~/.claude/skills/ (each subdirectory)
- * 2. ~/.claude/plugins/cache/{plugin}/skills/ (each subdirectory)
- * 3. ~/.claude/plugins/cache/{plugin}/superpowers/skills/ (each subdirectory)
+ * 1. ~/.config/opencode/skills/ and ~/.config/opencode/skill/
+ * 2. ./.opencode/skills/ and ./.opencode/skill/
+ * 3. OpenCode external skill locations: ~/.claude/skills/ and ~/.agents/skills/
  */
 export function scanAllSkills(): SkillInfo[] {
   const home = homedir();
-  const claudeDir = join(home, '.claude');
   const skills: SkillInfo[] = [];
   const seen = new Set<string>();
 
-  // 1. ~/.claude/skills/*/
-  const userSkillsDir = join(claudeDir, 'skills');
-  for (const skill of scanDirectory(userSkillsDir, 1)) {
-    if (!seen.has(skill.name)) {
-      seen.add(skill.name);
-      skills.push(skill);
-    }
-  }
+  const directories = [
+    join(home, '.config', 'opencode', 'skills'),
+    join(home, '.config', 'opencode', 'skill'),
+    join(process.cwd(), '.opencode', 'skills'),
+    join(process.cwd(), '.opencode', 'skill'),
+    join(home, '.claude', 'skills'),
+    join(home, '.agents', 'skills'),
+  ];
 
-  // 2. ~/.claude/plugins/cache/*/skills/*/
-  const pluginsCacheDir = join(claudeDir, 'plugins', 'cache');
-  if (existsSync(pluginsCacheDir)) {
-    let cacheEntries: Dirent[];
-    try {
-      cacheEntries = readdirSync(pluginsCacheDir, { withFileTypes: true });
-    } catch {
-      cacheEntries = [];
-    }
-
-    for (const cacheEntry of cacheEntries) {
-      if (!cacheEntry.isDirectory()) continue;
-      const cacheDir = join(pluginsCacheDir, cacheEntry.name);
-
-      // Regular skills
-      const pluginSkillsDir = join(cacheDir, 'skills');
-      for (const skill of scanDirectory(pluginSkillsDir, 1)) {
-        if (!seen.has(skill.name)) {
-          seen.add(skill.name);
-          skills.push(skill);
-        }
-      }
-
-      // Superpowers skills
-      const superpowersSkillsDir = join(cacheDir, 'superpowers', 'skills');
-      for (const skill of scanDirectory(superpowersSkillsDir, 1)) {
-        if (!seen.has(skill.name)) {
-          seen.add(skill.name);
-          skills.push(skill);
-        }
+  for (const dir of directories) {
+    for (const skill of scanDirectory(dir, 1)) {
+      if (!seen.has(skill.name)) {
+        seen.add(skill.name);
+        skills.push(skill);
       }
     }
   }

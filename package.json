@@ -1,7 +1,7 @@
 {
-  "name": "wechat-claude-code",
+  "name": "wechat-opencode",
   "version": "1.0.0",
-  "description": "Chat with Claude Code from WeChat - a Claude Code Skill that bridges personal WeChat to local Claude Code",
+  "description": "Chat with OpenCode from WeChat - a bridge from personal WeChat to local OpenCode",
   "type": "module",
   "scripts": {
     "build": "tsc",
@@ -11,10 +11,9 @@
     "dev": "tsc --watch",
     "test": "node --test dist/tests/*.test.js",
     "setup": "node dist/main.js setup",
-    "daemon": "bash scripts/daemon.sh"
+    "daemon": "node dist/daemon.js"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.1.0",
     "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0"
   },
@@ -24,11 +23,11 @@
     "@types/qrcode-terminal": "^0.12.0",
     "typescript": "^5.7.0"
   },
-  "keywords": ["wechat", "claude-code", "claude", "bridge", "chat", "skill"],
+  "keywords": ["wechat", "opencode", "bridge", "chat", "skill"],
   "author": "Wechat-ggGitHub",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Wechat-ggGitHub/wechat-claude-code.git"
+    "url": "https://github.com/Wechat-ggGitHub/wechat-opencode.git"
   }
 }
