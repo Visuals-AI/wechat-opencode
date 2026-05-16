@@ -24,9 +24,9 @@ function appendLog(source: string, text: string): void {
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1120,
-    height: 760,
+    height: 920,
     minWidth: 900,
-    minHeight: 620,
+    minHeight: 820,
     title: 'WeChat OpenCode Console',
     webPreferences: {
       preload: join(projectRoot, 'src', 'desktop', 'preload.cjs'),

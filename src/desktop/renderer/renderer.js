@@ -11,7 +11,11 @@ const statusText = document.getElementById('statusText');
 const pidText = document.getElementById('pidText');
 
 function append(source, text, timestamp = new Date().toISOString()) {
-  const line = `[${new Date(timestamp).toLocaleTimeString()}] ${source}> ${text}`;
+  const prefix = `[${new Date(timestamp).toLocaleTimeString()}] ${source}> `;
+  const normalized = String(text).replace(/\r\n/g, '\n');
+  const line = normalized.includes('\n')
+    ? `${prefix}\n${normalized}`
+    : `${prefix}${normalized}`;
   consoleEl.textContent += line.endsWith('\n') ? line : `${line}\n`;
   consoleEl.scrollTop = consoleEl.scrollHeight;
 }
