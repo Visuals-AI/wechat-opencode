@@ -49,6 +49,12 @@ chmod +x start.sh
 ./start.sh
 ```
 
+Stop with:
+
+```bash
+./stop.sh
+```
+
 First-time setup prints a terminal QR code. If the Linux machine has no GUI, scan the black-and-white QR code directly from the terminal:
 
 ```bash
@@ -93,10 +99,13 @@ Use this mode on Windows or any GUI machine when you want buttons and a live int
 
 On Windows, double-click `start.vbs` from Explorer. It starts the desktop app without showing a console window and writes startup logs to `~/.wechat-opencode/logs/windows-startup.log`.
 
+To stop the desktop app and related bridge processes without showing a console window, double-click `stop.vbs`. Stop logs are written to `~/.wechat-opencode/logs/windows-stop.log`.
+
 For troubleshooting, run the batch file directly so you can see terminal output:
 
 ```powershell
 start-windows.cmd
+stop-windows.cmd
 ```
 
 Start the Electron console:

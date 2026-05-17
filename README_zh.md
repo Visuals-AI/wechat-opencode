@@ -49,6 +49,12 @@ chmod +x start.sh
 ./start.sh
 ```
 
+停止：
+
+```bash
+./stop.sh
+```
+
 首次绑定会在终端打印黑白字符二维码。如果 Linux 没有图形界面，直接用微信扫描终端里的二维码：
 
 ```bash
@@ -93,10 +99,13 @@ npm run daemon -- restart
 
 Windows 可直接双击 `start.vbs`。它会隐藏黑框启动桌面应用，并把启动日志写入 `~/.wechat-opencode/logs/windows-startup.log`。
 
+停止桌面应用和相关桥接进程可双击 `stop.vbs`，停止日志写入 `~/.wechat-opencode/logs/windows-stop.log`。
+
 如果需要排错，再直接运行批处理查看终端输出：
 
 ```powershell
 start-windows.cmd
+stop-windows.cmd
 ```
 
 启动 Electron 控制台：
