@@ -2,6 +2,8 @@
 
 Bridge personal WeChat to local OpenCode. Send messages from WeChat and have them processed by `opencode run --format json` in your configured working directory.
 
+![](./imgs/demo.jpg)
+
 ## Features
 
 - Text conversation with OpenCode through WeChat

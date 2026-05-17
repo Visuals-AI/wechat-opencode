@@ -2,6 +2,8 @@
 
 将个人微信桥接到本地 OpenCode。微信消息会被转发给 `opencode run --format json`，并在你配置的工作目录中执行。
 
+![](./imgs/demo.jpg)
+
 ## 功能
 
 - 通过微信与 OpenCode 文字对话
