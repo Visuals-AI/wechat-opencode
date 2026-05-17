@@ -55,6 +55,14 @@ chmod +x start.sh
 ./stop.sh
 ```
 
+重置微信登录并强制重新扫码：
+
+```bash
+./reset.sh
+```
+
+`reset.sh` 会停止桥接，并删除 `~/.wechat-opencode/` 下的 `accounts`、`sessions`、`get_updates_buf`、`qrcode.png`。它会保留 `config.env`。
+
 首次绑定会在终端打印黑白字符二维码。如果 Linux 没有图形界面，直接用微信扫描终端里的二维码：
 
 ```bash
@@ -101,11 +109,14 @@ Windows 可直接双击 `start.vbs`。它会隐藏黑框启动桌面应用，并
 
 停止桌面应用和相关桥接进程可双击 `stop.vbs`，停止日志写入 `~/.wechat-opencode/logs/windows-stop.log`。
 
+如果要切换微信账号，可双击 `reset.vbs`。它会停止桥接、清除微信绑定和会话文件，并把日志写入 `~/.wechat-opencode/logs/windows-reset.log`。它会保留 `config.env`。
+
 如果需要排错，再直接运行批处理查看终端输出：
 
 ```powershell
 start-windows.cmd
 stop-windows.cmd
+reset-windows.cmd
 ```
 
 启动 Electron 控制台：

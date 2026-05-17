@@ -55,6 +55,14 @@ Stop with:
 ./stop.sh
 ```
 
+Reset WeChat login and force QR binding again:
+
+```bash
+./reset.sh
+```
+
+`reset.sh` stops the bridge and removes `accounts`, `sessions`, `get_updates_buf`, and `qrcode.png` under `~/.wechat-opencode/`. It keeps `config.env`.
+
 First-time setup prints a terminal QR code. If the Linux machine has no GUI, scan the black-and-white QR code directly from the terminal:
 
 ```bash
@@ -101,11 +109,14 @@ On Windows, double-click `start.vbs` from Explorer. It starts the desktop app wi
 
 To stop the desktop app and related bridge processes without showing a console window, double-click `stop.vbs`. Stop logs are written to `~/.wechat-opencode/logs/windows-stop.log`.
 
+To switch WeChat accounts, double-click `reset.vbs`. It stops the bridge, clears WeChat binding/session files, and writes logs to `~/.wechat-opencode/logs/windows-reset.log`. It keeps `config.env`.
+
 For troubleshooting, run the batch file directly so you can see terminal output:
 
 ```powershell
 start-windows.cmd
 stop-windows.cmd
+reset-windows.cmd
 ```
 
 Start the Electron console:
