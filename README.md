@@ -2,7 +2,8 @@
 
 Bridge personal WeChat to local OpenCode. Send messages from WeChat and have them processed by `opencode run --format json` in your configured working directory.
 
-![](./imgs/demo.jpg)
+![](./imgs/demo1.jpg)
+![](./imgs/demo2.jpg)
 
 ## Features
 
@@ -40,6 +41,13 @@ Then send a message in WeChat.
 ## Linux Background Mode
 
 Use this mode on Linux servers, SSH sessions, or any machine where you want the bridge to keep running without a desktop window.
+
+One-command installer/startup:
+
+```bash
+chmod +x start.sh
+./start.sh
+```
 
 First-time setup prints a terminal QR code. If the Linux machine has no GUI, scan the black-and-white QR code directly from the terminal:
 
@@ -82,6 +90,14 @@ The Node daemon manager is cross-platform, but this mode is the recommended Linu
 ## Desktop Console
 
 Use this mode on Windows or any GUI machine when you want buttons and a live interaction console.
+
+On Windows, double-click `start.vbs` from Explorer. It starts the desktop app without showing a console window and writes startup logs to `~/.wechat-opencode/logs/windows-startup.log`.
+
+For troubleshooting, run the batch file directly so you can see terminal output:
+
+```powershell
+start-windows.cmd
+```
 
 Start the Electron console:
 

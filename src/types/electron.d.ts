@@ -11,6 +11,9 @@ declare module 'electron' {
     webContents: { send(channel: string, payload: unknown): void };
     loadFile(path: string): Promise<void>;
     on(event: string, listener: (...args: any[]) => void): void;
+    once(event: string, listener: (...args: any[]) => void): void;
+    show(): void;
+    focus(): void;
     static getAllWindows(): BrowserWindow[];
   }
 
@@ -29,5 +32,6 @@ declare module 'electron' {
 
   export const dialog: {
     showOpenDialog(window: BrowserWindow, options: any): Promise<{ canceled: boolean; filePaths: string[] }>;
+    showErrorBox(title: string, content: string): void;
   };
 }

@@ -1,11 +1,37 @@
 import electron from 'electron';
 import { spawn, type ChildProcess } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
+import { homedir } from 'node:os';
 
 const { app, BrowserWindow, ipcMain, dialog } = electron;
 type AppWindow = InstanceType<typeof BrowserWindow>;
+
+const desktopLogDir = join(homedir(), '.wechat-opencode', 'logs');
+const desktopLogPath = join(desktopLogDir, 'desktop.log');
+
+function desktopLog(message: string, data?: unknown): void {
+  try {
+    mkdirSync(desktopLogDir, { recursive: true });
+    const suffix = data === undefined ? '' : ` ${JSON.stringify(data)}`;
+    appendFileSync(desktopLogPath, `${new Date().toISOString()} ${message}${suffix}\n`, 'utf8');
+  } catch {
+    // ignore logging failures
+  }
+}
+
+process.on('uncaughtException', (err) => {
+  desktopLog('uncaughtException', { message: err.message, stack: err.stack });
+  dialog.showErrorBox('WeChat OpenCode 启动失败', err.stack || err.message);
+  app.quit();
+});
+
+process.on('unhandledRejection', (reason) => {
+  const message = reason instanceof Error ? reason.message : String(reason);
+  const stack = reason instanceof Error ? reason.stack : undefined;
+  desktopLog('unhandledRejection', { message, stack });
+});
 
 let mainWindow: AppWindow | undefined;
 let bridgeProcess: ChildProcess | undefined;
@@ -22,12 +48,14 @@ function appendLog(source: string, text: string): void {
 }
 
 function createWindow(): void {
+  desktopLog('creating window', { projectRoot, mainScript });
   mainWindow = new BrowserWindow({
     width: 1120,
     height: 920,
     minWidth: 900,
     minHeight: 820,
     title: 'WeChat OpenCode Console',
+    show: false,
     webPreferences: {
       preload: join(projectRoot, 'src', 'desktop', 'preload.cjs'),
       contextIsolation: true,
@@ -35,7 +63,16 @@ function createWindow(): void {
     },
   });
 
-  void mainWindow.loadFile(join(projectRoot, 'src', 'desktop', 'renderer', 'index.html'));
+  const htmlPath = join(projectRoot, 'src', 'desktop', 'renderer', 'index.html');
+  mainWindow.once('ready-to-show', () => {
+    desktopLog('window ready-to-show');
+    mainWindow?.show();
+    mainWindow?.focus();
+  });
+  void mainWindow.loadFile(htmlPath).catch((err) => {
+    desktopLog('loadFile failed', { htmlPath, message: err.message, stack: err.stack });
+    dialog.showErrorBox('WeChat OpenCode 页面加载失败', err.stack || err.message);
+  });
   mainWindow.on('closed', () => {
     mainWindow = undefined;
   });
@@ -108,7 +145,12 @@ ipcMain.handle('stop', async () => {
 
 ipcMain.handle('get-status', async () => ({ running: !!bridgeProcess, pid: bridgeProcess?.pid }));
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  desktopLog('app ready');
+  createWindow();
+}).catch((err) => {
+  desktopLog('app ready failed', { message: err.message, stack: err.stack });
+});
 
 app.on('window-all-closed', () => {
   if (bridgeProcess) bridgeProcess.kill();

@@ -2,7 +2,8 @@
 
 将个人微信桥接到本地 OpenCode。微信消息会被转发给 `opencode run --format json`，并在你配置的工作目录中执行。
 
-![](./imgs/demo.jpg)
+![](./imgs/demo1.jpg)
+![](./imgs/demo2.jpg)
 
 ## 功能
 
@@ -40,6 +41,13 @@ npm run daemon -- start
 ## Linux 后台模式
 
 适合 Linux 服务器、SSH 环境、无 GUI 机器，或者希望桥接服务在后台持续运行的场景。
+
+一键安装并启动：
+
+```bash
+chmod +x start.sh
+./start.sh
+```
 
 首次绑定会在终端打印黑白字符二维码。如果 Linux 没有图形界面，直接用微信扫描终端里的二维码：
 
@@ -82,6 +90,14 @@ npm run daemon -- restart
 ## 桌面控制台
 
 适合 Windows 或有 GUI 的机器，提供按钮和实时交互控制台。
+
+Windows 可直接双击 `start.vbs`。它会隐藏黑框启动桌面应用，并把启动日志写入 `~/.wechat-opencode/logs/windows-startup.log`。
+
+如果需要排错，再直接运行批处理查看终端输出：
+
+```powershell
+start-windows.cmd
+```
 
 启动 Electron 控制台：
 
